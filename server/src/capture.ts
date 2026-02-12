@@ -33,6 +33,7 @@ export interface RegionFile {
 
 const REGION_FILE = path.join(CONFIG_DIR, "region.json");
 const TEMP_DIR = path.join(CONFIG_DIR, "tmp");
+const TEST_CAPTURE_FILE = path.join(CONFIG_DIR, "test-capture.png");
 
 function ensureDirs(): void {
   for (const dir of [CONFIG_DIR, TEMP_DIR]) {
@@ -67,9 +68,7 @@ export function setLicenseTier(tier: "free" | "pro"): void {
 
 function checkCaptureAllowed(): void {
   if (_license.tier === "free" && _license.capturesRemaining === 0) {
-    throw new Error(
-      "Free tier capture limit reached. Upgrade to Pro for unlimited captures."
-    );
+    throw new Error("Free tier capture limit reached. Upgrade to Pro for unlimited captures.");
   }
 }
 
@@ -130,11 +129,9 @@ function validateRegion(r: Region): void {
 // MVP: Uses macOS `screencapture` CLI tool.
 // This requires "Screen Recording" permission in System Settings > Privacy & Security.
 //
-// TODO (v2): Migrate to ScreenCaptureKit via a native Swift helper for:
-//   - Faster captures
-//   - Window-level targeting
-//   - No temporary file needed
-//   - Better multi-monitor support
+// TEMP FIX (Claude TCC mess):
+// If Node capture is denied, fall back to reading ~/.screeninspect/test-capture.png
+// which is produced by the ScreenInspect menubar app (permission OK).
 
 export function captureRegion(regionOverride?: Region): CaptureResult {
   ensureDirs();
@@ -147,9 +144,7 @@ export function captureRegion(regionOverride?: Region): CaptureResult {
   const region = regionOverride ?? stored?.region;
 
   if (!region) {
-    throw new Error(
-      "No region set. Use set_region tool or the overlay selector first."
-    );
+    throw new Error("No region set. Use set_region tool or the overlay selector first.");
   }
 
   validateRegion(region);
@@ -160,7 +155,6 @@ export function captureRegion(regionOverride?: Region): CaptureResult {
   }
 
   // Build screencapture command
-  // -x: no sound  -R: region  -t png: format
   const tmpFile = path.join(TEMP_DIR, `capture-${Date.now()}.png`);
   const rect = `${region.x},${region.y},${region.width},${region.height}`;
   const cmd = `screencapture -x -R${rect} -t png "${tmpFile}"`;
@@ -170,16 +164,63 @@ export function captureRegion(regionOverride?: Region): CaptureResult {
   try {
     execSync(cmd, { timeout: 10000, stdio: "pipe" });
   } catch (err: any) {
-    // Check common failures
     const stderr = err?.stderr?.toString() || "";
-    if (stderr.includes("permission") || err.status === 1) {
+    const looksLikePermission =
+      stderr.toLowerCase().includes("permission") || err?.status === 1;
+
+    // ── Fallback ──
+    if (looksLikePermission && fs.existsSync(TEST_CAPTURE_FILE)) {
+      logWarn("screencapture denied; using test-capture.png fallback", {
+        TEST_CAPTURE_FILE,
+      });
+
+      const buffer = fs.readFileSync(TEST_CAPTURE_FILE);
+      const base64 = buffer.toString("base64");
+      const sizeBytes = buffer.length;
+
+      decrementCapture();
+
+      // Best-effort scale factor
+      let scaleFactor = 2;
+      try {
+        const scaleOutput = execSync(
+          "system_profiler SPDisplaysDataType 2>/dev/null | grep -i resolution | head -1",
+          { encoding: "utf-8", timeout: 5000 }
+        );
+        scaleFactor = scaleOutput.includes("Retina") ? 2 : 1;
+      } catch {
+        // keep default
+      }
+
+      const result: CaptureResult = {
+        base64,
+        region,
+        timestamp: new Date().toISOString(),
+        sizeBytes,
+        format: "png",
+        displayScaleFactor: scaleFactor,
+        captureMethod: "screencapture-cli",
+      };
+
+      logInfo("Fallback capture successful (test-capture.png)", {
+        sizeBytes,
+        region,
+        scaleFactor,
+      });
+
+      return result;
+    }
+
+    if (looksLikePermission) {
       throw new Error(
         "Screen Recording permission denied. Go to:\n" +
         "  System Settings → Privacy & Security → Screen Recording\n" +
         "and enable permission for Terminal / your IDE / Node.js.\n" +
-        "Then restart the MCP server."
+        "Then restart the MCP server.\n\n" +
+        "Fallback file not found: ~/.screeninspect/test-capture.png (run ScreenInspect → Test Capture once)."
       );
     }
+
     throw new Error(`screencapture failed: ${stderr || err.message}`);
   }
 

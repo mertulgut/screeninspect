@@ -26,7 +26,7 @@ ScreenInspect is a macOS menubar app + MCP server that lets any LLM capture a us
 ### Build
 
 ```bash
-git clone https://github.com/yourname/screeninspect-mcp.git
+git clone https://github.com/mertulgut/screeninspect.git
 cd screeninspect-mcp
 bash scripts/build.sh
 ```

@@ -1,0 +1,10 @@
+node_modules/
+server/dist/
+build/
+release/
+.DS_Store
+*.dSYM/
+.vscode/
+.idea/
+*.swp
+*.tmp

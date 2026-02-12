@@ -2,10 +2,7 @@
 
 **On-demand screen region capture for LLMs — local, private, no continuous recording.**
 
-ScreenInspect is a macOS menubar app + MCP server that lets any LLM capture a user-selected screen region on demand.  
-The LLM calls a tool, gets back a base64 PNG and metadata. That's it — no streaming, no background processes, no cloud.
-
-ScreenInspect never captures the screen unless explicitly requested by an LLM tool call.
+ScreenInspect is a macOS menubar app + MCP server that lets any LLM capture a user-selected screen region on demand. The LLM calls a tool, gets back a base64 PNG and metadata. That's it — no streaming, no background processes, no cloud.
 
 ---
 
@@ -18,14 +15,12 @@ ScreenInspect never captures the screen unless explicitly requested by an LLM to
 - **Multi-monitor aware** — uses macOS global coordinate space
 - **Privacy by design** — on-demand only, never continuous
 
----
-
 ## Quick Start
 
 ### Prerequisites
 
 - macOS 13 (Ventura) or later
-- Node.js 18+ (tested with Node 20 and 24)
+- Node.js 18+
 - Xcode Command Line Tools (`xcode-select --install`)
 
 ### Build
@@ -55,11 +50,9 @@ The camera viewfinder icon appears in your menubar with options:
 - **Open Logs** — view `~/.screeninspect/server.log`
 - **Permissions Help** — direct link to Screen Recording settings
 
----
+### Connect to MCP Clients
 
-## Connect to LLM Clients
-
-### Claude Desktop (MCP)
+#### Claude Desktop
 
 Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
@@ -74,9 +67,9 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 }
 ```
 
-Restart Claude Desktop.
+Then restart Claude Desktop.
 
-### Cursor (MCP)
+#### Cursor
 
 Edit `.cursor/mcp.json` in your project root (or globally):
 
@@ -91,7 +84,7 @@ Edit `.cursor/mcp.json` in your project root (or globally):
 }
 ```
 
-### Any MCP Client
+#### Any MCP Client
 
 The server uses **stdio** transport. Launch with:
 
@@ -99,62 +92,39 @@ The server uses **stdio** transport. Launch with:
 node /path/to/screeninspect-mcp/server/dist/index.js
 ```
 
----
-
-## HTTP Tool (Non-MCP Clients)
-
-For agents that do **not** support MCP (e.g. Antigravity + Gemini), ScreenInspect exposes an optional HTTP endpoint:
-
-```
-POST http://localhost:4545/capture
-```
-
-This endpoint returns the same payload as `capture_region`  
-(base64 PNG image + metadata).
-
-Recommended tool name for LLMs: `screeninspect_capture`
-
----
-
 ## MCP Tools
 
 ### `set_region`
 
 Save a screen region for future captures.
 
-| Parameter | Type   | Description                            |
-|----------|--------|----------------------------------------|
-| `x`      | number | X coordinate (global, may be negative) |
-| `y`      | number | Y coordinate (global, may be negative) |
-| `width`  | number | Width of region (points)               |
-| `height` | number | Height of region (points)              |
+| Parameter | Type   | Description                                |
+|-----------|--------|--------------------------------------------|
+| `x`       | number | X coordinate of top-left corner (pixels)   |
+| `y`       | number | Y coordinate of top-left corner (pixels)   |
+| `width`   | number | Width of region (pixels)                   |
+| `height`  | number | Height of region (pixels)                  |
 
-Coordinates use the **macOS global coordinate space**  
-(origin = bottom-left of the primary display).  
-On multi-monitor setups, secondary monitors may have negative coordinates.
+Coordinates use the **macOS global coordinate space** (origin = top-left of primary display). On multi-monitor setups, secondary monitors may have negative coordinates.
 
 ### `get_region`
 
-Returns the currently saved region from `~/.screeninspect/region.json`,  
-or `null` if none is set.
+Returns the currently saved region from `~/.screeninspect/region.json`, or null if none is set.
 
 ### `capture_region`
 
 Captures the saved region (or override with inline parameters) and returns:
 
-- **Base64 PNG image** (as an MCP image content block)
+- **base64 PNG image** (as an MCP image content block)
 - **Metadata**: region, timestamp, file size, scale factor, capture method
 
-Optional override parameters: `x`, `y`, `width`, `height`  
-(all four required to override).
-
----
+Optional override parameters: `x`, `y`, `width`, `height` (all four required to override).
 
 ## Architecture
 
 ```
 screeninspect-mcp/
-├── server/                 # MCP + HTTP server (Node.js TypeScript)
+├── server/                 # MCP server (Node.js TypeScript)
 │   ├── src/
 │   │   ├── index.ts        # MCP protocol + tool handlers
 │   │   ├── capture.ts      # Region persistence + screencapture
@@ -168,13 +138,10 @@ screeninspect-mcp/
 │   ├── build.sh            # Build everything
 │   └── release.sh          # Package .app, .zip, .dmg, checksums
 ├── README.md
-├── SECURITY.md
-└── LICENSE
+└── SECURITY.md
 ```
 
----
-
-## Data Storage
+### Data Storage
 
 All data is stored locally in `~/.screeninspect/`:
 
@@ -183,68 +150,62 @@ All data is stored locally in `~/.screeninspect/`:
 | `region.json`     | Saved capture region               |
 | `server.log`      | Server + app logs                  |
 | `crash-*.json`    | Crash reports (local only)         |
-| `tmp/`            | Temporary capture files            |
+| `tmp/`            | Temporary capture files (cleaned)  |
 | `bin/`            | Installed binaries                 |
-
-Note: `build/` and `release/` directories are not committed to git.
-
----
 
 ## Multi-Monitor Support
 
-macOS uses a global coordinate space where the primary display’s bottom-left
-corner is `(0, 0)`. Displays to the left or above the primary display may have
-negative coordinates.
+macOS uses a global coordinate space where the primary display's top-left corner is (0, 0). Displays to the left or above the primary display may have negative coordinates. The Region Selector overlay appears on all connected displays and correctly converts Cocoa coordinates to the global space used by `screencapture`.
 
-The Region Selector overlay appears on **all connected displays** and correctly
-converts Cocoa coordinates to the global space used by `screencapture`.
-
-To inspect your display layout:
+To check your display arrangement:
 
 ```bash
 system_profiler SPDisplaysDataType
 ```
 
----
-
 ## Packaging & Distribution
 
-### Build a release package
+### Build a release package:
 
 ```bash
 bash scripts/release.sh
 ```
 
-Creates in `release/`:
-- `ScreenInspect.app`
-- `ScreenInspect-v1.0.0-macos.zip`
-- `ScreenInspect-v1.0.0-macos.zip.sha256`
-- `ScreenInspect-v1.0.0-macos.dmg`
+This creates in `release/`:
+- `ScreenInspect.app` — standalone .app bundle
+- `ScreenInspect-v1.0.0-macos.zip` — distributable archive
+- `ScreenInspect-v1.0.0-macos.zip.sha256` — checksum
+- `ScreenInspect-v1.0.0-macos.dmg` — disk image
 
-### Production release checklist
-
+### Production release checklist:
 - [ ] Code sign with Developer ID
 - [ ] Notarize with Apple
 - [ ] Staple notarization ticket
 - [ ] Add Sparkle.framework for auto-updates
 - [ ] Integrate license key validation
-- [ ] Publish appcast.xml
+- [ ] Set up appcast.xml for update feed
 
----
+## Licensing (Placeholder)
+
+The current build runs in "Pro" mode with all features unlocked. The licensing infrastructure is in place:
+
+- `capture.ts` has a `LicenseState` with `free` / `pro` tiers
+- Free tier: limited to 10 captures (configurable)
+- Pro tier: unlimited captures
+- `setLicenseTier()` function ready for license key validation
+
+Recommended services: Gumroad, LemonSqueezy, Keygen.sh, or Paddle.
 
 ## Known Limitations
 
-1. **Capture method**: MVP uses `screencapture -x -R`.  
-   ScreenCaptureKit is planned for v2.
-2. **Permission detection**: Missing Screen Recording permission is detected
-   only on capture failure.
-3. **No window-level capture**: Pixel regions only (not window IDs).
-4. **Retina scaling**: Captures are at Retina resolution; metadata includes scale factor.
-5. **No live preview**: Region selector does not preview capture output.
-6. **Not signed/notarized**: Dev builds require Right-click → Open.
-7. **Complex multi-monitor layouts** may require further testing.
-
----
+1. **Capture method**: MVP uses `screencapture -x -R` CLI. Future version should use ScreenCaptureKit for faster, more flexible captures.
+2. **Permission detection**: Cannot proactively detect missing Screen Recording permission — discovered only on capture failure.
+3. **No window-level capture**: Captures pixel regions, not specific windows. Window targeting requires ScreenCaptureKit.
+4. **Retina scaling**: Captured images are at Retina resolution (2x) on Retina displays. Metadata includes `displayScaleFactor`.
+5. **No live preview**: Region selector doesn't preview what will be captured.
+6. **Not signed/notarized**: Dev build not code-signed. Right-click → Open to bypass Gatekeeper.
+7. **Multi-monitor edge cases**: Non-standard arrangements (vertical stacking, mixed resolutions) may have coordinate conversion issues.
+8. **No ScreenCaptureKit yet**: The #1 upgrade for v2.
 
 ## License
 
